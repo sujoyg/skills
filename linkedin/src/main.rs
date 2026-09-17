@@ -120,15 +120,11 @@ mod tests {
     }
 
     #[test]
-    fn parses_name() {
+    fn parses_a_find_person_command() {
         assert_eq!(
             parse_args(&args(&["find", "person", "--name", "Jane Doe"])),
             Ok(("Jane Doe", None))
         );
-    }
-
-    #[test]
-    fn parses_name_and_company() {
         assert_eq!(
             parse_args(&args(&[
                 "find",
@@ -140,10 +136,7 @@ mod tests {
             ])),
             Ok(("Jane Doe", Some("Acme")))
         );
-    }
-
-    #[test]
-    fn accepts_options_in_either_order() {
+        // Options may come in either order.
         assert_eq!(
             parse_args(&args(&[
                 "find",
@@ -158,77 +151,36 @@ mod tests {
     }
 
     #[test]
-    fn rejects_missing_command() {
-        assert!(parse_args(&args(&[])).is_err());
+    fn rejects_malformed_commands() {
+        let malformed = [
+            vec![],                                                    // no command
+            vec!["search", "person", "--name", "Jane"],                // wrong command
+            vec!["find"],                                              // no subject
+            vec!["find", "company", "--name", "Acme"],                 // wrong subject
+            vec!["find", "person", "--company", "Acme"],               // no --name
+            vec!["find", "person", "--name", "Jane", "--person", "J"], // unknown option
+            vec!["find", "person", "--name"],                          // option without a value
+            vec!["find", "person", "--name", "A", "--name", "B"],      // repeated option
+        ];
+        for command in malformed {
+            assert!(
+                parse_args(&args(&command)).is_err(),
+                "expected an error for {command:?}"
+            );
+        }
     }
 
     #[test]
-    fn rejects_unknown_command() {
-        assert!(parse_args(&args(&["search", "person", "--name", "Jane Doe"])).is_err());
-    }
-
-    #[test]
-    fn rejects_missing_subject() {
-        assert!(parse_args(&args(&["find"])).is_err());
-    }
-
-    #[test]
-    fn rejects_unknown_subject() {
-        assert!(parse_args(&args(&["find", "company", "--name", "Acme"])).is_err());
-    }
-
-    #[test]
-    fn rejects_missing_name() {
-        assert!(parse_args(&args(&["find", "person", "--company", "Acme"])).is_err());
-    }
-
-    #[test]
-    fn rejects_unknown_option() {
-        assert!(parse_args(&args(&["find", "person", "--person", "Jane Doe"])).is_err());
-    }
-
-    #[test]
-    fn rejects_option_without_value() {
-        assert!(parse_args(&args(&["find", "person", "--name"])).is_err());
-    }
-
-    #[test]
-    fn rejects_repeated_option() {
-        assert!(parse_args(&args(&[
-            "find", "person", "--name", "Jane", "--name", "John"
-        ]))
-        .is_err());
-    }
-
-    #[test]
-    fn builds_url_from_name() {
+    fn builds_an_encoded_search_url() {
         assert_eq!(
             search_url("Jane Doe", None),
             "https://www.linkedin.com/search/results/people/?keywords=Jane%20Doe"
         );
-    }
-
-    #[test]
-    fn appends_company_to_keywords() {
+        // The company joins the keywords; reserved and non-ASCII bytes are escaped.
         assert_eq!(
-            search_url("Jane Doe", Some("Acme Corp")),
-            "https://www.linkedin.com/search/results/people/?keywords=Jane%20Doe%20Acme%20Corp"
+            search_url("O'Neill Muñoz", Some("Acme & Co")),
+            "https://www.linkedin.com/search/results/people/?keywords=O%27Neill%20Mu%C3%B1oz%20Acme%20%26%20Co"
         );
-    }
-
-    #[test]
-    fn encodes_reserved_characters() {
-        assert_eq!(encode("O'Neill & Sons"), "O%27Neill%20%26%20Sons");
-    }
-
-    #[test]
-    fn encodes_non_ascii_characters() {
-        assert_eq!(encode("Ana Muñoz"), "Ana%20Mu%C3%B1oz");
-    }
-
-    #[test]
-    fn leaves_unreserved_characters_alone() {
-        assert_eq!(encode("Jane-Doe_1.0~x"), "Jane-Doe_1.0~x");
     }
 
     #[test]

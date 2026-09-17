@@ -5,11 +5,11 @@
 
 use std::process::{Command, ExitCode};
 
-const USAGE: &str = "usage: linkedin find --person <name> [--company <name>]";
+const USAGE: &str = "usage: linkedin find person --name <name> [--company <name>]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let (person, company) = match parse_args(&args) {
+    let (name, company) = match parse_args(&args) {
         Ok(parsed) => parsed,
         Err(message) => {
             eprintln!("{message}\n{USAGE}");
@@ -17,7 +17,7 @@ fn main() -> ExitCode {
         }
     };
 
-    let url = search_url(person, company);
+    let url = search_url(name, company);
     let (program, args) = browser_command(&url);
     match Command::new(program).args(args).status() {
         Ok(status) if status.success() => ExitCode::SUCCESS,
@@ -32,22 +32,27 @@ fn main() -> ExitCode {
     }
 }
 
-/// Parses `find --person <name> [--company <name>]`.
+/// Parses `find person --name <name> [--company <name>]`.
 ///
 /// `--company` narrows the search rather than standing on its own, so
-/// `--person` is required.
+/// `--name` is required.
 fn parse_args(args: &[String]) -> Result<(&str, Option<&str>), String> {
-    let (command, options) = args.split_first().ok_or("missing command")?;
+    let (command, rest) = args.split_first().ok_or("missing command")?;
     if command != "find" {
         return Err(format!("unknown command: {command}"));
     }
 
-    let mut person = None;
+    let (subject, options) = rest.split_first().ok_or("missing subject")?;
+    if subject != "person" {
+        return Err(format!("unknown subject: {subject}"));
+    }
+
+    let mut name = None;
     let mut company = None;
     let mut options = options.iter();
     while let Some(flag) = options.next() {
         let slot = match flag.as_str() {
-            "--person" => &mut person,
+            "--name" => &mut name,
             "--company" => &mut company,
             _ => return Err(format!("unknown option: {flag}")),
         };
@@ -58,7 +63,7 @@ fn parse_args(args: &[String]) -> Result<(&str, Option<&str>), String> {
         *slot = Some(value.as_str());
     }
 
-    Ok((person.ok_or("--person is required")?, company))
+    Ok((name.ok_or("--name is required")?, company))
 }
 
 /// Builds the people-search URL.
@@ -66,10 +71,10 @@ fn parse_args(args: &[String]) -> Result<(&str, Option<&str>), String> {
 /// The company goes into the keywords rather than LinkedIn's company filter,
 /// which only accepts numeric company IDs. Keywords match the whole profile,
 /// so both current and former employers count.
-fn search_url(person: &str, company: Option<&str>) -> String {
+fn search_url(name: &str, company: Option<&str>) -> String {
     let keywords = match company {
-        Some(company) => format!("{person} {company}"),
-        None => person.to_string(),
+        Some(company) => format!("{name} {company}"),
+        None => name.to_string(),
     };
     format!(
         "https://www.linkedin.com/search/results/people/?keywords={}",
@@ -115,19 +120,20 @@ mod tests {
     }
 
     #[test]
-    fn parses_person() {
+    fn parses_name() {
         assert_eq!(
-            parse_args(&args(&["find", "--person", "Jane Doe"])),
+            parse_args(&args(&["find", "person", "--name", "Jane Doe"])),
             Ok(("Jane Doe", None))
         );
     }
 
     #[test]
-    fn parses_person_and_company() {
+    fn parses_name_and_company() {
         assert_eq!(
             parse_args(&args(&[
                 "find",
-                "--person",
+                "person",
+                "--name",
                 "Jane Doe",
                 "--company",
                 "Acme"
@@ -141,9 +147,10 @@ mod tests {
         assert_eq!(
             parse_args(&args(&[
                 "find",
+                "person",
                 "--company",
                 "Acme",
-                "--person",
+                "--name",
                 "Jane Doe"
             ])),
             Ok(("Jane Doe", Some("Acme")))
@@ -157,31 +164,44 @@ mod tests {
 
     #[test]
     fn rejects_unknown_command() {
-        assert!(parse_args(&args(&["search", "--person", "Jane Doe"])).is_err());
+        assert!(parse_args(&args(&["search", "person", "--name", "Jane Doe"])).is_err());
     }
 
     #[test]
-    fn rejects_missing_person() {
-        assert!(parse_args(&args(&["find", "--company", "Acme"])).is_err());
+    fn rejects_missing_subject() {
+        assert!(parse_args(&args(&["find"])).is_err());
+    }
+
+    #[test]
+    fn rejects_unknown_subject() {
+        assert!(parse_args(&args(&["find", "company", "--name", "Acme"])).is_err());
+    }
+
+    #[test]
+    fn rejects_missing_name() {
+        assert!(parse_args(&args(&["find", "person", "--company", "Acme"])).is_err());
     }
 
     #[test]
     fn rejects_unknown_option() {
-        assert!(parse_args(&args(&["find", "--name", "Jane Doe"])).is_err());
+        assert!(parse_args(&args(&["find", "person", "--person", "Jane Doe"])).is_err());
     }
 
     #[test]
     fn rejects_option_without_value() {
-        assert!(parse_args(&args(&["find", "--person"])).is_err());
+        assert!(parse_args(&args(&["find", "person", "--name"])).is_err());
     }
 
     #[test]
     fn rejects_repeated_option() {
-        assert!(parse_args(&args(&["find", "--person", "Jane", "--person", "John"])).is_err());
+        assert!(parse_args(&args(&[
+            "find", "person", "--name", "Jane", "--name", "John"
+        ]))
+        .is_err());
     }
 
     #[test]
-    fn builds_url_from_person() {
+    fn builds_url_from_name() {
         assert_eq!(
             search_url("Jane Doe", None),
             "https://www.linkedin.com/search/results/people/?keywords=Jane%20Doe"
